@@ -101,7 +101,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(order_choose_item, "order_choose_category_.+"))
     application.add_handler(CallbackQueryHandler(order_add_item, "order_add_item_.+"))
     application.add_handler(CallbackQueryHandler(order_remove_item, "order_remove_item_.+"))
-    application.add_handler(CallbackQueryHandler(finish_ordering, "order_finish"))
+    application.add_handler(CallbackQueryHandler(finish_ordering, "finish_order"))
 
     application.add_handler(ConversationHandler(entry_points=[CallbackQueryHandler(register_restaurant, "create_restaurant")],
                                                 states={conversation_states.ENTER_RESTAURANT_NAME: [

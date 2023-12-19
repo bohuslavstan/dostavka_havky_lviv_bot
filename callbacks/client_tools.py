@@ -133,7 +133,6 @@ async def order_choose_category(update: Update, context: CallbackContext):
     buttons = [[InlineKeyboardButton(text=str(category),
                                      callback_data=f"order_choose_category_{category.id}")]
                for category in Restaurant.get(restaurant_id=context.chat_data["order"]["restaurant_id"]).list_categories()]
-    buttons.append([InlineKeyboardButton(text="Закінчити", callback_data="order_finish")])
     reply_markup = InlineKeyboardMarkup(buttons)
     message = await context.chat_data["order_message"].edit_text(text=text,
                                                                  reply_markup=reply_markup)
@@ -143,17 +142,19 @@ async def order_choose_category(update: Update, context: CallbackContext):
 async def order_choose_item(update: Update, context: CallbackContext):
     buttons = [[InlineKeyboardButton(text="Назад",
                                      callback_data=f"choose_restaurant_{context.chat_data['order']['restaurant_id']}")]]
+    context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
     if context.chat_data["order"]["header"].list_items():
         buttons.insert(0, [InlineKeyboardButton(text="Оформити замовлення",
                                                 callback_data="finish_order")])
     reply_markup = InlineKeyboardMarkup(buttons)
-    await update.callback_query.edit_message_reply_markup(reply_markup=reply_markup)
+    await context.chat_data["order_message"].edit_reply_markup(reply_markup=reply_markup)
     context.chat_data["order_menu_items"] = {}
     category_id = int(update.callback_query.data.replace("order_choose_category_", ""))
     for item in MenuCategory.list_items(category_id=category_id):
         text = str(item)
         buttons = [[InlineKeyboardButton(text="Добавити",
                                          callback_data=f"order_add_item_{item.id}")]]
+        context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
         if context.chat_data["order"]["header"].has_item(item):
             buttons[0].append(InlineKeyboardButton(text="Прибрати",
                                                    callback_data=f"order_remove_item_{item.id}"))
@@ -165,15 +166,21 @@ async def order_choose_item(update: Update, context: CallbackContext):
 async def order_add_item(update: Update, context: CallbackContext):
     menu_item_id = int(update.callback_query.data.replace("order_add_item_", ""))
     menu_item = MenuItem.find(item_id=menu_item_id)
+    context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
     order_item = context.chat_data["order"]["header"].has_item(menu_item)
-    print(order_item.__repr__())
     if order_item:
         order_item.change_quantity(1)
     else:
         OrderItem.create(header=context.chat_data["order"]["header"],
                          menu_item=menu_item)
     text = f"Ваше замовлення:\n{str(context.chat_data['order']['header'])}"
-    reply_markup = context.chat_data["order_message"].reply_markup
+    buttons = [[InlineKeyboardButton(text="Назад",
+                                     callback_data=f"choose_restaurant_{context.chat_data['order']['restaurant_id']}")]]
+    context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
+    if context.chat_data["order"]["header"].list_items():
+        buttons.insert(0, [InlineKeyboardButton(text="Оформити замовлення",
+                                                callback_data="finish_order")])
+    reply_markup = InlineKeyboardMarkup(buttons)
     await context.chat_data["order_message"].edit_text(text=text,
                                                        reply_markup=reply_markup)
     buttons = [[InlineKeyboardButton(text="Добавити",
@@ -185,8 +192,9 @@ async def order_add_item(update: Update, context: CallbackContext):
 
 
 async def order_remove_item(update: Update, context: CallbackContext):
-    menu_item_id = int(update.callback_query.data.replace("order_add_item_", ""))
+    menu_item_id = int(update.callback_query.data.replace("order_remove_item_", ""))
     menu_item = MenuItem.find(item_id=menu_item_id)
+    context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
     order_item = context.chat_data["order"]["header"].has_item(menu_item)
     quantity = order_item.change_quantity(-1)
     buttons = [[InlineKeyboardButton(text="Добавити",
@@ -195,16 +203,20 @@ async def order_remove_item(update: Update, context: CallbackContext):
         buttons[0].append(InlineKeyboardButton(text="Прибрати",
                                                callback_data=f"order_remove_item_{menu_item_id}"))
 
-    text = f"Ваше замовлення:\n{str(context.chat_data['order']['header'])}"
-    reply_markup = context.chat_data["order_message"].reply_markup
-    await context.chat_data["order_message"].edit_text(text=text,
-                                                       reply_markup=reply_markup)
-    buttons = [[InlineKeyboardButton(text="Добавити",
-                                     callback_data=f"order_add_item_{menu_item_id}"),
-                InlineKeyboardButton(text="Прибрати",
-                                     callback_data=f"order_remove_item_{menu_item_id}")]]
     reply_markup = InlineKeyboardMarkup(buttons)
     await update.callback_query.message.edit_reply_markup(reply_markup=reply_markup)
+
+    context.chat_data['order']['header'] = context.chat_data['order']['header'].update()
+    text = f"Ваше замовлення:\n{str(context.chat_data['order']['header'])}"
+    buttons = [[InlineKeyboardButton(text="Назад",
+                                     callback_data=f"choose_restaurant_{context.chat_data['order']['restaurant_id']}")]]
+    context.chat_data["order"]["header"] = context.chat_data["order"]["header"].update()
+    if context.chat_data["order"]["header"].list_items():
+        buttons.insert(0, [InlineKeyboardButton(text="Оформити замовлення",
+                                                callback_data="finish_order")])
+    reply_markup = InlineKeyboardMarkup(buttons)
+    await context.chat_data["order_message"].edit_text(text=text,
+                                                       reply_markup=reply_markup)
 
 
 async def finish_ordering(update: Update, context: CallbackContext):

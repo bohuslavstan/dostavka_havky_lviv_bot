@@ -533,7 +533,7 @@ class OrderHeader(Base):
     def has_item(self, item: "MenuItem"):
         with Session(engine) as session:
             session.add(self)
-            session.merge(item)
+            session.add(item)
             for order_item in self.items:
                 if order_item.menu_item == item:
                     return order_item
@@ -543,10 +543,14 @@ class OrderHeader(Base):
             session.add(self)
             order_status = OrderStatusUpdate(header=self,
                                              status="CREATED",
-                                             timestamp=datetime.now())
+                                             status_ts=datetime.now())
             session.add(order_status)
             session.commit()
         return order_status
+
+    def update(self):
+        with Session(engine) as session:
+            return session.scalars(select(OrderHeader).where(OrderHeader.id == self.id)).first()
 
 
 class OrderItem(Base):
@@ -561,10 +565,10 @@ class OrderItem(Base):
     @classmethod
     def create(cls, header, menu_item):
         with Session(engine) as session:
-            session.merge(header)
-            session.merge(menu_item)
+            session.add(header)
+            session.add(menu_item)
             order_item = cls(header=header, menu_item=menu_item)
-            session.merge(order_item)
+            session.add(order_item)
             session.commit()
         return order_item
 
