@@ -4,12 +4,23 @@ from telegram.ext import CallbackContext
 from models.base import User, DeliveryGuyStatus, PromotionApplication
 
 
-RESTAURANT_OWNER_BUTTONS = ({"text": "Добавити рестораторів", "callback_data": "check_applications_restaurant_owner"},
+ADMIN_BUTTONS = ({"text": "Добавити рестораторів", "callback_data": "check_applications_restaurant_owner"},
                             {"text": "Видалити рестораторів", "callback_data": "remove_promotions_restaurant_owner"},
                             {"text": "Добавити кур'єрів", "callback_data": "check_applications_delivery_guy"},
                             {"text": "Видалити кур'єрів", "callback_data": "remove_promotions_delivery_quy"},
                             {"text": "Відкрити повідомлення про проблеми", "callback_data": "reported_issues"},
                             {"text": "Назад", "callback_data": "to_start_menu"})
+
+
+RESTAURANT_OWNER_BUTTONS = ({"text": "Менеджер категорій", "callback_data": "category_manager"},
+                           {"text": "Менеджер тегів закладу", "callback_data": "restaurant_tags_manager"},
+                           {"text": "Менеджер ресторанів закладу", "callback_data": "restaurant_locations_manager"},
+                           {"text": "Менеджер меню закладу", "callback_data": "menu_items_manager"},
+                           {"text": "Видалити заклад", "callback_data": "delete_restaurant"},
+                           {"text": "Назад", "callback_data": "to_start_menu"})
+
+FREE_RESTAURANT_OWNER_BUTTONS = ({"text": "Зареєструвати ресторан", "callback_data": "create_restaurant"},
+                                 {"text": "Назад", "callback_data": "to_start_menu"})
 
 
 async def special_actions_menu(update: Update, context: CallbackContext):
@@ -41,20 +52,14 @@ async def special_actions_menu(update: Update, context: CallbackContext):
             if restaurant:
                 text = f"Меню ресторатора.\nВаш ресторан: {restaurant.name}.\nТут можна працювати зі всім," \
                        f" що пов'язано з вашим закладом"
-                buttons = ({"text": "Менеджер категорій", "callback_data": "category_manager"},
-                           {"text": "Менеджер тегів закладу", "callback_data": "restaurant_tags_manager"},
-                           {"text": "Менеджер ресторанів закладу", "callback_data": "restaurant_locations_manager"},
-                           {"text": "Менеджер меню закладу", "callback_data": "menu_items_manager"},
-                           {"text": "Видалити заклад", "callback_data": "delete_restaurant"},
-                           {"text": "Назад", "callback_data": "to_start_menu"})
+                buttons = RESTAURANT_OWNER_BUTTONS
             else:
                 text = "Меню ресторатора.\n" \
                        "Ви можете зареєструвати свій заклад для того, щоби доєднатися до нашої системи"
-                buttons = ({"text": "Зареєструвати ресторан", "callback_data": "create_restaurant"},
-                           {"text": "Назад", "callback_data": "to_start_menu"})
+                buttons = FREE_RESTAURANT_OWNER_BUTTONS
         case "admin":
             text = "Меню адміністратора."
-            buttons = RESTAURANT_OWNER_BUTTONS
+            buttons = ADMIN_BUTTONS
 
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(**x)] for x in buttons])
     await context.bot.edit_message_text(chat_id=update.effective_user.id,

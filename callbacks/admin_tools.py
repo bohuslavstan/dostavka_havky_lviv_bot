@@ -80,7 +80,6 @@ async def accept_application(update: Update, context: CallbackContext):
     role_to_promote = PromotionApplication.promote(user_id)
     user = User.get(user_id)
     text = f"Ви успішно підтвердили заявку!\n{str(user)}"
-    print(context.chat_data)
     await context.bot.edit_message_text(chat_id=update.effective_user.id,
                                         message_id=context.chat_data["application"][user_id],
                                         text=text)

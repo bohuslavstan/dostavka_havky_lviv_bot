@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import List
 
 import yaml
-from sqlalchemy import create_engine, CheckConstraint, select, ForeignKey, desc
+from sqlalchemy import create_engine, CheckConstraint, select, ForeignKey, desc, and_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
 
@@ -74,11 +74,10 @@ class User(Base):
     @classmethod
     def get(cls, telegram_id: int):
         with Session(engine) as session:
-            return session.scalar(select(cls).where(cls.telegram_id == telegram_id)).first()
+            return session.scalar(select(cls).where(cls.telegram_id == telegram_id))
 
     def promote(self, role: str):
         with Session(engine) as session:
-            print(f"{self.role} == {role}")
             if self.role != role:
                 self.role = role
                 session.commit()
@@ -89,6 +88,22 @@ class User(Base):
         with Session(engine) as session:
             session.add(self)
             return self.restaurant
+
+    def add_location(self, name: str, longitude: float, latitude: float):
+        with Session(engine) as session:
+            session.add(self)
+            location = ClientSavedLocation(location_name=name,
+                                           longitude=longitude,
+                                           latitude=latitude,
+                                           user=self)
+            session.add(location)
+            session.commit()
+        return location
+
+    def list_locations(self):
+        with Session(engine) as session:
+            session.add(self)
+            return self.saved_locations
 
 
 class DeliveryGuyStatus(Base):
@@ -121,7 +136,6 @@ class DeliveryGuyStatus(Base):
                 return new_status.timestamp - last_status.timestamp
 
 
-
 class PromotionApplication(Base):
     __tablename__ = "user_promotion_applications"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -132,12 +146,14 @@ class PromotionApplication(Base):
     closed: Mapped[bool] = mapped_column(default=False)
     user: Mapped["User"] = relationship(back_populates="promotion_application")
 
+    def __repr__(self):
+        return f"<PromotionApplication of {self.user.full_name } (@{self.user.username}) for {self.role_to_promote}." \
+               f" Closed={self.closed}>"
+
     @classmethod
     def create(cls, user_id: int, role_to_promote: str):
         with Session(engine) as session:
             user = User.get(user_id)
-            print(f"{user.telegram_id}\n{role_to_promote}\n{datetime.now()}")
-            print(session.scalars(select(cls).where(cls.user == user)))
             if not session.scalars(select(cls).where(cls.user == user)).first():
                 session.add(cls(user_id=user.telegram_id,
                                 role_to_promote=role_to_promote,
@@ -158,7 +174,7 @@ class PromotionApplication(Base):
     @classmethod
     def all_open(cls, role):
         with Session(engine) as session:
-            return session.scalars(select(cls).where(cls.role_to_promote == role and not cls.closed)).all()
+            return session.scalars(select(cls).where(and_(cls.role_to_promote == role, cls.closed is False))).all()
 
     @classmethod
     def close(cls, appl_id: int):
@@ -201,6 +217,11 @@ class ClientSavedLocation(Base):
     def __repr__(self):
         return f"<{self.user}'s location - {self.location_name}>"
 
+    def __str__(self):
+        with Session(engine) as session:
+            session.add(self)
+            return f"{self.location_name}"
+
     @classmethod
     def create(cls, user: User, location_name, longitude, latitude):
         with Session(engine) as session:
@@ -218,12 +239,27 @@ class ClientSavedLocation(Base):
             session.delete(self)
             session.commit()
 
+    @classmethod
+    def find(cls, location_id: int) -> "ClientSavedLocation":
+        with Session(engine) as session:
+            location = session.scalars(select(cls).where(cls.id == location_id)).first()
+            return location
+
+    def edit(self, name):
+        with Session(engine) as session:
+            session.add(self)
+            self.location_name = name
+            session.commit()
+        return self
+
+
 class Restaurant(Base):
     __tablename__ = "restaurants"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str] = mapped_column(nullable=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"), nullable=False, unique=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"), nullable=True)
+    deleted: Mapped[bool] = mapped_column(default=False)
     tags: Mapped[List["RestaurantTag"]] = relationship(back_populates="restaurant")
     locations: Mapped[List["RestaurantLocation"]] = relationship(back_populates="restaurant")
     owner: Mapped[User] = relationship(back_populates="restaurant")
@@ -242,7 +278,7 @@ class Restaurant(Base):
         return _str
 
     @classmethod
-    def create(cls, name: str, description: str, owner_id: int):
+    def create(cls, name: str, description: str, owner_id: int) -> "Restaurant":
         with Session(engine) as session:
             owner = User.get(owner_id)
             session.add(owner)
@@ -250,15 +286,18 @@ class Restaurant(Base):
                 raise IntegrityError
             elif owner.role != "restaurant_owner":
                 raise IntegrityError
-            elif session.execute(select(cls).where(cls.name == name)).all:
+            elif session.execute(select(cls).where(cls.name == name)).all():
                 raise IntegrityError
             else:
-                session.add(cls(name=name,
-                                description=description,
-                                owner=owner))
+                restaurant = cls(name=name,
+                                 description=description,
+                                 owner=owner)
+                session.add(restaurant)
+                session.commit()
+            return restaurant
 
     @classmethod
-    def find(cls, owner_id: int):
+    def find(cls, owner_id: int) -> "Restaurant":
         with Session(engine) as session:
             return session.scalars(select(cls).where(cls.owner_id == owner_id)).first()
 
@@ -267,11 +306,42 @@ class Restaurant(Base):
             session.add(self)
             return [*self.menu_categories]
 
+    def list_locations(self):
+        with Session(engine) as session:
+            session.add(self)
+            return [*self.locations]
+
     def create_category(self, category_name):
         with Session(engine) as session:
             session.add(self)
             session.add(MenuCategory(name=category_name, restaurant=self))
             session.commit()
+
+    def delete(self):
+        with Session(engine) as session:
+            session.add(self)
+            self.deleted = True
+            self.owner_id = None
+            session.commit()
+
+    def add_location(self, location_description, latitude, longitude):
+        with Session(engine) as session:
+            session.add(self)
+            session.add(RestaurantLocation(location_description=location_description,
+                                           latitude=latitude,
+                                           longitude=longitude,
+                                           restaurant=self))
+            session.commit()
+
+    @classmethod
+    def list_all(cls):
+        with Session(engine) as session:
+            return session.scalars(select(cls).where(cls.deleted is False)).all()
+
+    @classmethod
+    def get(cls, restaurant_id):
+        with Session(engine) as session:
+            return session.scalars(select(cls).where(cls.id == restaurant_id)).first()
 
 
 class RestaurantTag(Base):
@@ -297,6 +367,11 @@ class RestaurantLocation(Base):
 
     def __repr__(self):
         return f"<Restaurant '{self.restaurant.__repr__()}' at {self.location_description}>"
+
+    def __str__(self):
+        with Session(engine) as session:
+            session.add(self)
+            return f"Заклад {self.restaurant.name}\n{self.location_description}"
 
 
 class MenuCategory(Base):
@@ -330,6 +405,11 @@ class MenuCategory(Base):
             category = session.scalars(select(cls).where(cls.id == category_id)).first()
             return category.items
 
+    def delete(self):
+        with Session(engine) as session:
+            session.delete(self)
+            session.commit()
+
 
 class MenuItemTagToMenuItem(Base):
     __tablename__ = "menu_item_tag_to_menu_items"
@@ -350,7 +430,14 @@ class MenuItem(Base):
     orders: Mapped[List["OrderItem"]] = relationship(back_populates="menu_item")
 
     def __repr__(self):
-        return f"<Item '{self.name}' from '{self.category.restaurant.__repr__()}'>"
+        with Session(engine) as session:
+            session.add(self)
+            return f"<Item '{self.name}' from '{self.category.restaurant.__repr__()}'>"
+
+    def __str__(self):
+        with Session(engine) as session:
+            session.add(self)
+            return f"{self.name}\n{self.description}\n\n{self.price}₴"
 
     @classmethod
     def create(cls, name, category_id, description, price):
@@ -362,6 +449,27 @@ class MenuItem(Base):
             session.add(menu_item)
             session.commit()
         return menu_item
+
+    @classmethod
+    def delete(cls, menu_item_id: int):
+        with Session(engine) as session:
+            menu_item = session.scalars(select(cls).where(cls.id == menu_item_id)).first()
+            session.delete(menu_item)
+            session.commit()
+
+    @classmethod
+    def edit(cls, menu_item_id: int, name: str = None, desctiption: str = None, price: str = None):
+        with Session(engine) as session:
+            menu_item = session.scalars(select(cls).where(cls.id == menu_item_id)).first()
+            if name:
+                menu_item.name = name
+            if desctiption:
+                menu_item.description = desctiption
+            if price:
+                menu_item.price = price
+            session.commit()
+            return menu_item
+
 
 
 class MenuItemTag(Base):
@@ -382,7 +490,7 @@ class OrderHeader(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"))
     restaurant_location_id: Mapped[int] = mapped_column(ForeignKey("restaurant_locations.id"))
     client_location_id: Mapped[int] = mapped_column(ForeignKey("client_saved_locations.id"))
-    delivery_guy_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"))
+    delivery_guy_id: Mapped[int] = mapped_column(ForeignKey("users.telegram_id"), nullable=True)
     comment: Mapped[str] = mapped_column(nullable=True)
     paid: Mapped[bool] = mapped_column(default=False)
     client: Mapped["User"] = relationship(back_populates="orders", foreign_keys=[client_id])
@@ -391,6 +499,30 @@ class OrderHeader(Base):
     items: Mapped[List["OrderItem"]] = relationship(back_populates="header")
     statuses: Mapped[List["OrderStatusUpdate"]] = relationship(back_populates="header")
     delivery_guy: Mapped["User"] = relationship(back_populates="deliveries", foreign_keys=[delivery_guy_id])
+
+
+    def __str__(self):
+        with Session(engine) as session:
+            session.add(self)
+            str_ = f"Замовлення {self.client.full_name} (@{self.client.username} №{self.id})\n" \
+                   f"заклад: {self.restaurant_location.restaurant.name} ({self.restaurant_location.location_description})\n" \
+                   f"Доставка до: {self.client_location.location_name}\n\n" \
+                   f"{'\n'.join(['\t='.join(['\tx'.join([item.menu_item.name, item.quantity]), item.menu_item.price * item.quantity]) for item in self.items])}\n\n" \
+                   f"Підсумок: {self.total(session)}"
+        return str_
+
+    @classmethod
+    def create(cls, client_id, restaurant_location_id, client_location_id):
+        with Session(engine) as session:
+            order_header = cls(client_id=client_id,
+                               restaurant_location_id=restaurant_location_id,
+                               client_location_id=client_location_id)
+            session.add(order_header)
+            session.commit()
+        return order_header
+
+    def total(self, session):
+        return session.scalars(select(func.sum(self.items.menu_item.price * self.items.quantity))).first()
 
 
 class OrderItem(Base):
