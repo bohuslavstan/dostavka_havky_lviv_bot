@@ -216,6 +216,7 @@ async def add_menu_item_finish(update: Update, context: CallbackContext):
                                              reply_markup=reply_markup)
     context.chat_data['last_message'] = message.message_id
     context.chat_data.pop("menu_item")
+    return ConversationHandler.END
 
 
 async def edit_menu_item_choose(update: Update, context: CallbackContext):

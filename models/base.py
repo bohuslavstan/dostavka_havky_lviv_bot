@@ -336,7 +336,7 @@ class Restaurant(Base):
     @classmethod
     def list_all(cls):
         with Session(engine) as session:
-            return session.scalars(select(cls).where(cls.deleted is False)).all()
+            return session.scalars(select(cls)).all()
 
     @classmethod
     def get(cls, restaurant_id):
@@ -470,6 +470,10 @@ class MenuItem(Base):
             session.commit()
             return menu_item
 
+    @classmethod
+    def find(cls, item_id: int):
+        with Session(engine) as session:
+            return session.scalars(select(cls).where(cls.id == item_id)).first()
 
 
 class MenuItemTag(Base):
@@ -504,11 +508,11 @@ class OrderHeader(Base):
     def __str__(self):
         with Session(engine) as session:
             session.add(self)
+            item_list = '\n'.join(['\t='.join(['\tx'.join([item.menu_item.name, str(item.quantity)]), str(item.menu_item.price * item.quantity)]) for item in self.items])
             str_ = f"Замовлення {self.client.full_name} (@{self.client.username} №{self.id})\n" \
                    f"заклад: {self.restaurant_location.restaurant.name} ({self.restaurant_location.location_description})\n" \
                    f"Доставка до: {self.client_location.location_name}\n\n" \
-                   f"{'\n'.join(['\t='.join(['\tx'.join([item.menu_item.name, item.quantity]), item.menu_item.price * item.quantity]) for item in self.items])}\n\n" \
-                   f"Підсумок: {self.total(session)}"
+                   f"{item_list}"
         return str_
 
     @classmethod
@@ -521,8 +525,28 @@ class OrderHeader(Base):
             session.commit()
         return order_header
 
-    def total(self, session):
-        return session.scalars(select(func.sum(self.items.menu_item.price * self.items.quantity))).first()
+    def list_items(self):
+        with Session(engine) as session:
+            session.add(self)
+            return self.items
+
+    def has_item(self, item: "MenuItem"):
+        with Session(engine) as session:
+            session.add(self)
+            session.merge(item)
+            for order_item in self.items:
+                if order_item.menu_item == item:
+                    return order_item
+
+    def publish(self):
+        with Session(engine) as session:
+            session.add(self)
+            order_status = OrderStatusUpdate(header=self,
+                                             status="CREATED",
+                                             timestamp=datetime.now())
+            session.add(order_status)
+            session.commit()
+        return order_status
 
 
 class OrderItem(Base):
@@ -530,9 +554,32 @@ class OrderItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     order_header_id: Mapped[int] = mapped_column(ForeignKey("order_headers.id"))
     menu_item_id: Mapped[int] = mapped_column(ForeignKey("menu_items.id"))
-    quantity: Mapped[int] = mapped_column(nullable=False)
+    quantity: Mapped[int] = mapped_column(nullable=False, default=1)
     header: Mapped["OrderHeader"] = relationship(back_populates="items")
     menu_item: Mapped["MenuItem"] = relationship(back_populates="orders")
+
+    @classmethod
+    def create(cls, header, menu_item):
+        with Session(engine) as session:
+            session.merge(header)
+            session.merge(menu_item)
+            order_item = cls(header=header, menu_item=menu_item)
+            session.merge(order_item)
+            session.commit()
+        return order_item
+
+    def change_quantity(self, amount_to_change: int):
+        with Session(engine) as session:
+            session.add(self)
+            self.quantity += amount_to_change
+            session.commit()
+            if self.quantity <= 0:
+                self.delete(session)
+        return self.quantity
+
+    def delete(self, session):
+        session.delete(self)
+        session.commit()
 
 
 class OrderStatusUpdate(Base):

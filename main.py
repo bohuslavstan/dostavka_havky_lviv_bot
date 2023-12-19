@@ -32,7 +32,8 @@ from callbacks.admin_tools import (
     cancel_application)
 from callbacks.client_tools import client_saved_location_manager, add_client_location_name, \
     add_client_location_location, add_client_location_finish, edit_client_location_name, edit_client_location_finish, \
-    edit_client_locations
+    edit_client_locations, start_ordering, choose_restaurant, order_choose_category, order_choose_item, order_add_item, \
+    order_remove_item, finish_ordering
 from callbacks.delivery_guy_tools import activate_delivery_status, deactivate_delivery_status
 from callbacks.general import start_bot, registration, back
 from callbacks.restaurant_owner_tools import register_restaurant, added_name, added_description, category_manager, \
@@ -93,6 +94,14 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(restaurant_location_manager, "restaurant_locations_manager"))
     application.add_handler(CallbackQueryHandler(client_saved_location_manager, "location_manager"))
     application.add_handler(CallbackQueryHandler(edit_client_locations, "edit_client_locations"))
+
+    application.add_handler(CallbackQueryHandler(start_ordering, "make_order"))
+    application.add_handler(CallbackQueryHandler(choose_restaurant, "order_choose_location_.+"))
+    application.add_handler(CallbackQueryHandler(order_choose_category, "choose_restaurant_.+"))
+    application.add_handler(CallbackQueryHandler(order_choose_item, "order_choose_category_.+"))
+    application.add_handler(CallbackQueryHandler(order_add_item, "order_add_item_.+"))
+    application.add_handler(CallbackQueryHandler(order_remove_item, "order_remove_item_.+"))
+    application.add_handler(CallbackQueryHandler(finish_ordering, "order_finish"))
 
     application.add_handler(ConversationHandler(entry_points=[CallbackQueryHandler(register_restaurant, "create_restaurant")],
                                                 states={conversation_states.ENTER_RESTAURANT_NAME: [
